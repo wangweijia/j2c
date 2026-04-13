@@ -1,0 +1,38 @@
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  width: 280px;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: #f6f8fb;
+  color: #1f2a37;
+}
+
+.panel {
+  padding: 14px;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+select {
+  min-width: 120px;
+}
+
+.actions {
+  margin-top: 12px;
+  font-size: 12px;
+}

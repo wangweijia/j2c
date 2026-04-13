@@ -1,0 +1,37 @@
+body {
+  margin: 0;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: #eef3fb;
+  color: #1d2735;
+}
+
+.container {
+  max-width: 760px;
+  margin: 24px auto;
+  padding: 0 16px 40px;
+}
+
+h1 {
+  margin: 0 0 16px;
+}
+
+.group {
+  background: #ffffff;
+  border: 1px solid #dde5f2;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+label {
+  display: grid;
+  grid-template-columns: 150px 1fr 80px;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+#status {
+  color: #1859b8;
+  font-size: 13px;
+}

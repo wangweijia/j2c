@@ -1,0 +1,11 @@
+{
+  "name": "subbridge-cn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Free Netflix subtitle translator Chrome extension (JA/EN -> ZH)",
+  "scripts": {
+    "start": "echo 'Open chrome://extensions, enable Developer mode, click Load unpacked and select this folder.'",
+    "check": "echo 'No build required for MVP. Validate in Chrome extension page.'",
+    "zip": "mkdir -p dist && zip -r dist/subbridge-cn.zip manifest.json src docs README.md package.json"
+  }
+}

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SubBridge CN</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+  <main class="panel">
+    <h1>SubBridge CN</h1>
+
+    <label class="row">
+      <span>启用翻译</span>
+      <input id="enabled" type="checkbox" />
+    </label>
+
+    <label class="row">
+      <span>翻译模式</span>
+      <select id="mode">
+        <option value="online-free">在线免费</option>
+        <option value="local-free">本地免费</option>
+      </select>
+    </label>
+
+    <label class="row">
+      <span>显示模式</span>
+      <select id="displayMode">
+        <option value="bilingual">双语</option>
+        <option value="zh-only">仅中文</option>
+        <option value="original-only">仅原文</option>
+      </select>
+    </label>
+
+    <label class="row">
+      <span>字幕延迟</span>
+      <select id="subtitleDelayMs">
+        <option value="-200">-200ms</option>
+        <option value="-100">-100ms</option>
+        <option value="0">0ms</option>
+        <option value="100">+100ms</option>
+        <option value="200">+200ms</option>
+      </select>
+    </label>
+
+    <div class="actions">
+      <a href="../options/options.html" target="_blank" rel="noreferrer">打开完整设置</a>
+    </div>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>

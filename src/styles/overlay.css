@@ -1,0 +1,48 @@
+#subbridge-overlay {
+  --subbridge-bg-opacity: 0.35;
+
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  width: min(90vw, 1100px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35em;
+  pointer-events: none;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.35;
+}
+
+#subbridge-overlay .subbridge-line {
+  display: block;
+  padding: 0.1em 0.5em;
+  border-radius: 8px;
+  color: #ffffff;
+  background: rgba(0, 0, 0, var(--subbridge-bg-opacity));
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  box-decoration-break: clone;
+}
+
+#subbridge-overlay .subbridge-original {
+  font-size: 0.78em;
+  opacity: 0.95;
+}
+
+#subbridge-overlay .subbridge-translated {
+  font-size: 1em;
+  color: #f3fbff;
+}
+
+#subbridge-overlay .subbridge-status {
+  margin-top: 0.2em;
+  padding: 0.05em 0.45em;
+  border-radius: 999px;
+  font-size: 0.48em;
+  letter-spacing: 0.02em;
+  color: #d9f2ff;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(180, 230, 255, 0.35);
+}

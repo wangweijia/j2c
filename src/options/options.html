@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SubBridge CN 设置</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+
+<body>
+  <main class="container">
+    <h1>SubBridge CN 设置</h1>
+
+    <section class="group">
+      <label>
+        <span>启用翻译</span>
+        <input id="enabled" type="checkbox" />
+      </label>
+
+      <label>
+        <span>翻译模式</span>
+        <select id="mode">
+          <option value="online-free">在线免费</option>
+          <option value="local-free">本地免费</option>
+        </select>
+      </label>
+
+      <label>
+        <span>显示模式</span>
+        <select id="displayMode">
+          <option value="bilingual">双语</option>
+          <option value="zh-only">仅中文</option>
+          <option value="original-only">仅原文</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="group">
+      <label>
+        <span>字体大小</span>
+        <input id="fontSize" type="range" min="20" max="48" step="1" />
+        <strong id="fontSizeValue"></strong>
+      </label>
+
+      <label>
+        <span>底部偏移</span>
+        <input id="bottomOffset" type="range" min="40" max="180" step="1" />
+        <strong id="bottomOffsetValue"></strong>
+      </label>
+
+      <label>
+        <span>背景透明度</span>
+        <input id="bgOpacity" type="range" min="0" max="0.8" step="0.05" />
+        <strong id="bgOpacityValue"></strong>
+      </label>
+
+      <label>
+        <span>字幕延迟微调</span>
+        <input id="subtitleDelayMs" type="range" min="-500" max="500" step="20" />
+        <strong id="subtitleDelayMsValue"></strong>
+      </label>
+
+      <label>
+        <span>拼句防抖</span>
+        <input id="mergeDebounceMs" type="range" min="80" max="320" step="10" />
+        <strong id="mergeDebounceMsValue"></strong>
+      </label>
+
+      <label>
+        <span>状态徽标</span>
+        <input id="showStatusBadge" type="checkbox" />
+      </label>
+    </section>
+
+    <p id="status"></p>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+
+</html>
