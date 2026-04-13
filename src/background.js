@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   showStatusBadge: true,
   hideNativeSubtitles: true,
   enablePrefetch15s: true,
+  myMemoryEmail: "",
 };
 
 chrome.runtime.onInstalled.addListener(async () => {

@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   showStatusBadge: true,
   hideNativeSubtitles: true,
   enablePrefetch15s: true,
+  myMemoryEmail: "",
 };
 
 const fields = {
@@ -24,6 +25,7 @@ const fields = {
   showStatusBadge: document.getElementById("showStatusBadge"),
   hideNativeSubtitles: document.getElementById("hideNativeSubtitles"),
   enablePrefetch15s: document.getElementById("enablePrefetch15s"),
+  myMemoryEmail: document.getElementById("myMemoryEmail"),
 };
 
 const values = {
@@ -59,6 +61,7 @@ async function loadSettings() {
   fields.showStatusBadge.checked = settings.showStatusBadge;
   fields.hideNativeSubtitles.checked = settings.hideNativeSubtitles;
   fields.enablePrefetch15s.checked = settings.enablePrefetch15s;
+  fields.myMemoryEmail.value = settings.myMemoryEmail || "";
 
   renderValues();
 }
@@ -76,6 +79,7 @@ async function saveSettings() {
     showStatusBadge: fields.showStatusBadge.checked,
     hideNativeSubtitles: fields.hideNativeSubtitles.checked,
     enablePrefetch15s: fields.enablePrefetch15s.checked,
+    myMemoryEmail: (fields.myMemoryEmail.value || "").trim(),
   };
 
   await chrome.storage.sync.set(payload);
