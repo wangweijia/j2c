@@ -9,6 +9,8 @@
     subtitleDelayMs: 0,
     mergeDebounceMs: 180,
     showStatusBadge: true,
+    hideNativeSubtitles: true,
+    enablePrefetch15s: true,
   };
 
   const state = {
@@ -25,6 +27,9 @@
     renderTimer: null,
     hideTimer: null,
     translationVersion: 0,
+    hiddenSubtitleEls: new Set(),
+    prefetchTimer: null,
+    prefetchReportedOk: null,
   };
 
   function hashText(text) {
@@ -42,6 +47,13 @@
     ".player-timedtext-text-container",
     "div[data-uia='player-subtitle']",
     ".watch-video--player-view .player-timedtext-text-container",
+  ];
+
+  const nativeSubtitleSelectors = [
+    ".player-timedtext",
+    ".player-timedtext-text-container",
+    "div[data-uia='player-subtitle']",
+    ".watch-video--player-view .player-timedtext",
   ];
 
   function createOverlay() {
@@ -70,6 +82,46 @@
     state.originalEl = original;
     state.translatedEl = translated;
     state.statusEl = status;
+  }
+
+  function hideNativeSubtitleElements() {
+    if (!state.settings.hideNativeSubtitles) {
+      restoreNativeSubtitleElements();
+      return;
+    }
+
+    nativeSubtitleSelectors.forEach((selector) => {
+      const nodes = document.querySelectorAll(selector);
+      nodes.forEach((el) => {
+        if (!el || el.closest("#subbridge-overlay")) {
+          return;
+        }
+
+        if (!el.dataset.subbridgePrevVisibility) {
+          el.dataset.subbridgePrevVisibility = el.style.visibility || "";
+          el.dataset.subbridgePrevOpacity = el.style.opacity || "";
+        }
+
+        el.style.visibility = "hidden";
+        el.style.opacity = "0";
+        state.hiddenSubtitleEls.add(el);
+      });
+    });
+  }
+
+  function restoreNativeSubtitleElements() {
+    state.hiddenSubtitleEls.forEach((el) => {
+      if (!el || !el.isConnected) {
+        return;
+      }
+
+      el.style.visibility = el.dataset.subbridgePrevVisibility || "";
+      el.style.opacity = el.dataset.subbridgePrevOpacity || "";
+      delete el.dataset.subbridgePrevVisibility;
+      delete el.dataset.subbridgePrevOpacity;
+    });
+
+    state.hiddenSubtitleEls.clear();
   }
 
   function applyOverlayStyles() {
@@ -226,6 +278,8 @@
   }
 
   function handleSubtitleMutation() {
+    hideNativeSubtitleElements();
+
     const current = extractSubtitleText();
     if (!current) return;
 
@@ -244,6 +298,112 @@
       childList: true,
       characterData: true,
     });
+  }
+
+  function extractCueText(cue) {
+    if (!cue) return "";
+
+    const raw = typeof cue.text === "string" ? cue.text : "";
+    const withoutTags = raw.replace(/<[^>]+>/g, " ").replace(/\n/g, " ");
+    return window.SubBridgeTranslator.normalizeText(withoutTags);
+  }
+
+  function collectFutureCueTexts(secondsAhead) {
+    const video = document.querySelector("video");
+    if (!video || !video.textTracks) {
+      return { supported: false, texts: [] };
+    }
+
+    const now = video.currentTime || 0;
+    const end = now + secondsAhead;
+    const texts = [];
+
+    for (let trackIndex = 0; trackIndex < video.textTracks.length; trackIndex += 1) {
+      const track = video.textTracks[trackIndex];
+      try {
+        if (track.mode === "disabled") {
+          track.mode = "hidden";
+        }
+      } catch (error) {
+        void error;
+      }
+
+      const cues = track.cues;
+      if (!cues || !cues.length) {
+        continue;
+      }
+
+      for (let i = 0; i < cues.length; i += 1) {
+        const cue = cues[i];
+        if (typeof cue.startTime !== "number") {
+          continue;
+        }
+
+        if (cue.startTime < now || cue.startTime > end) {
+          continue;
+        }
+
+        const text = extractCueText(cue);
+        if (text) {
+          texts.push(text);
+        }
+      }
+    }
+
+    return { supported: true, texts };
+  }
+
+  function reportPrefetchBadge(ok, title) {
+    if (state.prefetchReportedOk === ok) {
+      return;
+    }
+
+    state.prefetchReportedOk = ok;
+    chrome.runtime.sendMessage({
+      type: "PREFETCH_BADGE",
+      ok,
+      title,
+    });
+  }
+
+  async function runPrefetch() {
+    if (!state.settings.enabled || !state.settings.enablePrefetch15s) {
+      reportPrefetchBadge(false, "15秒预获取已关闭");
+      return;
+    }
+
+    const result = collectFutureCueTexts(15);
+    if (!result.supported) {
+      reportPrefetchBadge(false, "未读取到字幕轨道");
+      return;
+    }
+
+    const uniqueTexts = [...new Set(result.texts)].slice(0, 8);
+    if (!uniqueTexts.length) {
+      reportPrefetchBadge(false, "当前未捕获未来15秒字幕");
+      return;
+    }
+
+    reportPrefetchBadge(true, "已预获取未来15秒字幕");
+
+    for (let i = 0; i < uniqueTexts.length; i += 1) {
+      const text = uniqueTexts[i];
+      const lang = window.SubBridgeTranslator.detectLanguage(text);
+      await window.SubBridgeTranslator.translate(text, state.settings.mode, lang);
+    }
+  }
+
+  function startPrefetchLoop() {
+    if (state.prefetchTimer) {
+      clearInterval(state.prefetchTimer);
+      state.prefetchTimer = null;
+    }
+
+    state.prefetchTimer = setInterval(() => {
+      void runPrefetch();
+    }, 2500);
+
+    void runPrefetch();
   }
 
   async function loadSettings() {
@@ -269,6 +429,8 @@
 
     if (changed) {
       applyOverlayStyles();
+      hideNativeSubtitleElements();
+      void runPrefetch();
     }
   }
 
@@ -287,7 +449,9 @@
     await loadSettings();
     createOverlay();
     applyOverlayStyles();
+    hideNativeSubtitleElements();
     startObserver();
+    startPrefetchLoop();
     handleSubtitleMutation();
 
     chrome.storage.onChanged.addListener(onStorageChanged);

@@ -8,6 +8,8 @@ const DEFAULT_SETTINGS = {
   subtitleDelayMs: 0,
   mergeDebounceMs: 180,
   showStatusBadge: true,
+  hideNativeSubtitles: true,
+  enablePrefetch15s: true,
 };
 
 const fields = {
@@ -20,6 +22,8 @@ const fields = {
   subtitleDelayMs: document.getElementById("subtitleDelayMs"),
   mergeDebounceMs: document.getElementById("mergeDebounceMs"),
   showStatusBadge: document.getElementById("showStatusBadge"),
+  hideNativeSubtitles: document.getElementById("hideNativeSubtitles"),
+  enablePrefetch15s: document.getElementById("enablePrefetch15s"),
 };
 
 const values = {
@@ -53,6 +57,8 @@ async function loadSettings() {
   fields.subtitleDelayMs.value = settings.subtitleDelayMs;
   fields.mergeDebounceMs.value = settings.mergeDebounceMs;
   fields.showStatusBadge.checked = settings.showStatusBadge;
+  fields.hideNativeSubtitles.checked = settings.hideNativeSubtitles;
+  fields.enablePrefetch15s.checked = settings.enablePrefetch15s;
 
   renderValues();
 }
@@ -68,6 +74,8 @@ async function saveSettings() {
     subtitleDelayMs: Number(fields.subtitleDelayMs.value),
     mergeDebounceMs: Number(fields.mergeDebounceMs.value),
     showStatusBadge: fields.showStatusBadge.checked,
+    hideNativeSubtitles: fields.hideNativeSubtitles.checked,
+    enablePrefetch15s: fields.enablePrefetch15s.checked,
   };
 
   await chrome.storage.sync.set(payload);
