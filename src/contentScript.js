@@ -21,6 +21,7 @@
     originalEl: null,
     translatedEl: null,
     statusEl: null,
+    promptEl: null,
     queueRunning: false,
     pendingSegment: null,
     mergeTimer: null,
@@ -30,6 +31,7 @@
     hiddenSubtitleEls: new Set(),
     prefetchTimer: null,
     prefetchReportedOk: null,
+    syncEngineReady: false,
   };
 
   function hashText(text) {
@@ -76,12 +78,26 @@
     container.appendChild(translated);
     container.appendChild(status);
 
+    // 预翻译确认弹窗
+    const prompt = document.createElement("div");
+    prompt.id = "subbridge-prompt";
+    prompt.style.display = "none";
+    prompt.innerHTML =
+      '<div class="subbridge-prompt-box">' +
+      '<div class="subbridge-prompt-msg"></div>' +
+      '<div class="subbridge-prompt-btns">' +
+      '<button class="subbridge-prompt-yes">开始预翻译</button>' +
+      '<button class="subbridge-prompt-no">使用实时翻译</button>' +
+      "</div></div>";
+
     document.documentElement.appendChild(container);
+    document.documentElement.appendChild(prompt);
 
     state.overlayEl = container;
     state.originalEl = original;
     state.translatedEl = translated;
     state.statusEl = status;
+    state.promptEl = prompt;
   }
 
   function hideNativeSubtitleElements() {
@@ -289,6 +305,12 @@
   }
 
   function handleSubtitleMutation() {
+    // 预翻译同步模式下，字幕由 timeupdate 驱动，MutationObserver 仅负责隐藏原生字幕
+    if (window.SubBridgeSyncEngine && window.SubBridgeSyncEngine.isActive()) {
+      hideNativeSubtitleElements();
+      return;
+    }
+
     const current = extractSubtitleText();
 
     if (!current) {
@@ -447,7 +469,7 @@
     }
   }
 
-  function onRuntimeMessage(message) {
+  function onRuntimeMessage(message, sender, sendResponse) {
     if (!message || !message.type) return;
 
     if (message.type === "TOGGLE_OVERLAY") {
@@ -456,6 +478,106 @@
       applyOverlayStyles();
       renderStatus(state.settings.enabled ? "已启用" : "已暂停");
     }
+
+    if (message.type === "PRETRANSLATE_FILE") {
+      // 从 popup 发来的文件内容
+      if (window.SubBridgeSyncEngine) {
+        var ok = window.SubBridgeSyncEngine.startFromFile(message.content, message.filename, state.settings.mode);
+        sendResponse({ ok: ok });
+      } else {
+        sendResponse({ ok: false, error: "engine_not_ready" });
+      }
+      return true;
+    }
+
+    if (message.type === "PRETRANSLATE_AUTO") {
+      if (window.SubBridgeSyncEngine) {
+        window.SubBridgeSyncEngine.tryAutoFlow(state.settings.mode);
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ ok: false });
+      }
+      return true;
+    }
+
+    if (message.type === "PRETRANSLATE_STOP") {
+      if (window.SubBridgeSyncEngine) {
+        window.SubBridgeSyncEngine.deactivate();
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ ok: false });
+      }
+      return true;
+    }
+
+    if (message.type === "PRETRANSLATE_STATUS") {
+      var eng = window.SubBridgeSyncEngine;
+      sendResponse({
+        active: eng ? eng.isActive() : false,
+        translating: eng ? eng.isTranslating() : false,
+        progress: eng ? eng.getProgress() : { done: 0, total: 0, failed: 0 },
+        cueCount: eng ? eng.getCueCount() : 0,
+      });
+      return true;
+    }
+
+    if (message.type === "PRETRANSLATE_EXPORT") {
+      var srt = window.SubBridgeSyncEngine ? window.SubBridgeSyncEngine.exportTranslatedSRT() : "";
+      sendResponse({ srt: srt });
+      return true;
+    }
+  }
+
+  function showSyncPrompt(msg, onConfirm, onCancel) {
+    if (!state.promptEl) return;
+
+    var msgEl = state.promptEl.querySelector(".subbridge-prompt-msg");
+    var yesBtn = state.promptEl.querySelector(".subbridge-prompt-yes");
+    var noBtn = state.promptEl.querySelector(".subbridge-prompt-no");
+
+    msgEl.textContent = msg;
+    state.promptEl.style.display = "flex";
+
+    function cleanup() {
+      state.promptEl.style.display = "none";
+      yesBtn.removeEventListener("click", onYes);
+      noBtn.removeEventListener("click", onNo);
+    }
+
+    function onYes() {
+      cleanup();
+      if (onConfirm) onConfirm();
+    }
+    function onNo() {
+      cleanup();
+      if (onCancel) onCancel();
+    }
+
+    yesBtn.addEventListener("click", onYes);
+    noBtn.addEventListener("click", onNo);
+  }
+
+  function initSyncEngine() {
+    if (!window.SubBridgeSyncEngine) return;
+
+    window.SubBridgeSyncEngine.setCallbacks({
+      onRender: renderSubtitle,
+      onStatus: renderStatus,
+      onClear: clearOverlay,
+      onModeChange: function (active) {
+        state.syncEngineReady = active;
+        // 预翻译模式激活时隐藏原生字幕
+        if (active) hideNativeSubtitleElements();
+      },
+      onPrompt: showSyncPrompt,
+    });
+
+    // 延迟 3 秒后尝试自动提取（等 Netflix 播放器加载字幕轨道）
+    setTimeout(function () {
+      if (state.settings.enabled) {
+        window.SubBridgeSyncEngine.tryAutoFlow(state.settings.mode);
+      }
+    }, 3000);
   }
 
   async function init() {
@@ -466,6 +588,7 @@
     startObserver();
     startPrefetchLoop();
     handleSubtitleMutation();
+    initSyncEngine();
 
     chrome.storage.onChanged.addListener(onStorageChanged);
     chrome.runtime.onMessage.addListener(onRuntimeMessage);

@@ -29,6 +29,8 @@
       ],
       "js": [
         "src/translator/translator.js",
+        "src/subtitleParser.js",
+        "src/syncEngine.js",
         "src/contentScript.js"
       ],
       "css": [

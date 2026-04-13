@@ -4,7 +4,7 @@
 
 body {
   margin: 0;
-  width: 280px;
+  width: 300px;
   font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   background: #f6f8fb;
   color: #1f2a37;
@@ -35,4 +35,108 @@ select {
 .actions {
   margin-top: 12px;
   font-size: 12px;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid #dfe4ea;
+  margin: 12px 0;
+}
+
+.pretranslate-section h2 {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pretranslate-section .hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #666;
+}
+
+.pretranslate-status {
+  font-size: 12px;
+  color: #1f8f4b;
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  background: #e9f7ef;
+  border-radius: 4px;
+}
+
+.pretranslate-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #1f8f4b;
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.3s;
+}
+
+.pretranslate-progress span {
+  font-size: 11px;
+  white-space: nowrap;
+  color: #555;
+}
+
+.pretranslate-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.btn-primary:disabled {
+  background: #93b4f5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #e5e7eb;
+  color: #333;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: #d1d5db;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
 }

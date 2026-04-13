@@ -55,6 +55,34 @@
       <input id="enablePrefetch15s" type="checkbox" />
     </label>
 
+    <hr class="divider" />
+
+    <div class="pretranslate-section">
+      <h2>全量预翻译</h2>
+      <p class="hint">提前翻译全部字幕，播放时零延迟显示</p>
+
+      <div id="pretranslateStatus" class="pretranslate-status" style="display:none"></div>
+      <div id="pretranslateProgress" class="pretranslate-progress" style="display:none">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <span id="progressText"></span>
+      </div>
+
+      <div class="pretranslate-btns">
+        <button id="btnAutoExtract" class="btn btn-primary" title="自动从Netflix提取字幕并翻译">自动提取并翻译</button>
+        <label class="btn btn-secondary" title="导入SRT/VTT字幕文件">
+          导入字幕文件
+          <input id="fileInput" type="file" accept=".srt,.vtt" style="display:none" />
+        </label>
+      </div>
+
+      <div class="pretranslate-btns" style="margin-top:4px">
+        <button id="btnStopSync" class="btn btn-danger" style="display:none">停止预翻译</button>
+        <button id="btnExportSrt" class="btn btn-secondary" style="display:none">导出中文SRT</button>
+      </div>
+    </div>
+
     <div class="actions">
       <a href="../options/options.html" target="_blank" rel="noreferrer">打开完整设置</a>
     </div>
