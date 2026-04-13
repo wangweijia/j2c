@@ -24,20 +24,3 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.storage.sync.set(next);
   }
 });
-
-chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== "toggle-overlay") {
-    return;
-  }
-
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const activeTab = tabs[0];
-
-  if (!activeTab || !activeTab.id) {
-    return;
-  }
-
-  chrome.tabs.sendMessage(activeTab.id, { type: "TOGGLE_OVERLAY" }, () => {
-    void chrome.runtime.lastError;
-  });
-});

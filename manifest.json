@@ -34,14 +34,5 @@
       ],
       "run_at": "document_idle"
     }
-  ],
-  "commands": {
-    "toggle-overlay": {
-      "suggested_key": {
-        "default": "Alt+Shift+T",
-        "mac": "Option+Shift+T"
-      },
-      "description": "切换字幕翻译显示"
-    }
-  }
+  ]
 }
