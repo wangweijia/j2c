@@ -159,7 +159,7 @@
       state.translatedEl.style.display = "block";
     }
 
-    resetHideTimer();
+    cancelClearOverlay();
   }
 
   function renderStatus(text) {
@@ -167,16 +167,27 @@
     state.statusEl.textContent = text;
   }
 
-  function resetHideTimer() {
-    if (state.hideTimer) {
-      clearTimeout(state.hideTimer);
-    }
+  function clearOverlay() {
+    if (!state.originalEl || !state.translatedEl) return;
+    state.originalEl.textContent = "";
+    state.translatedEl.textContent = "";
+    state.lastSubtitle = "";
+  }
+
+  function scheduleClearOverlay() {
+    if (state.hideTimer) return;
 
     state.hideTimer = setTimeout(() => {
-      if (!state.originalEl || !state.translatedEl) return;
-      state.originalEl.textContent = "";
-      state.translatedEl.textContent = "";
-    }, 2200);
+      state.hideTimer = null;
+      clearOverlay();
+    }, 350);
+  }
+
+  function cancelClearOverlay() {
+    if (state.hideTimer) {
+      clearTimeout(state.hideTimer);
+      state.hideTimer = null;
+    }
   }
 
   function extractSubtitleText() {
@@ -187,13 +198,13 @@
       const lineNodes = root.querySelectorAll("span");
       const lines = [];
       lineNodes.forEach((el) => {
-        const value = window.SubBridgeTranslator.normalizeText(el.innerText || "");
+        const value = window.SubBridgeTranslator.normalizeText(el.textContent || "");
         if (value) {
           lines.push(value);
         }
       });
 
-      const text = lines.length ? lines.join(" ") : root.innerText || "";
+      const text = lines.length ? lines.join(" ") : root.textContent || "";
       const normalized = window.SubBridgeTranslator.normalizeText(text);
       if (normalized) {
         return normalized;
@@ -278,11 +289,15 @@
   }
 
   function handleSubtitleMutation() {
-    hideNativeSubtitleElements();
-
     const current = extractSubtitleText();
-    if (!current) return;
 
+    if (!current) {
+      scheduleClearOverlay();
+      return;
+    }
+
+    cancelClearOverlay();
+    hideNativeSubtitleElements();
     enqueueSubtitle(current);
   }
 
@@ -359,10 +374,8 @@
     }
 
     state.prefetchReportedOk = ok;
-    chrome.runtime.sendMessage({
-      type: "PREFETCH_BADGE",
-      ok,
-      title,
+    chrome.runtime.sendMessage({ type: "PREFETCH_BADGE", ok, title }, () => {
+      void chrome.runtime.lastError;
     });
   }
 
