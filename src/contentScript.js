@@ -215,9 +215,11 @@
       const root = document.querySelector(selector);
       if (!root) continue;
 
-      const lineNodes = root.querySelectorAll("span");
+      // 只取叶子 span（不含子 span），避免 Netflix 嵌套 span 导致文字被重复收集
+      const allSpans = root.querySelectorAll("span");
       const lines = [];
-      lineNodes.forEach((el) => {
+      allSpans.forEach((el) => {
+        if (el.querySelector("span")) return; // 跳过含子 span 的 wrapper
         const value = window.SubBridgeTranslator.normalizeText(el.textContent || "");
         if (value) {
           lines.push(value);
