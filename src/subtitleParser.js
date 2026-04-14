@@ -206,11 +206,82 @@
     return { supported: true, cues: deduped, trackCount: trackCount };
   }
 
+  /* ========== TTML 解析 ========== */
+
+  /**
+   * 解析 TTML 时间字符串（HH:MM:SS.mmm 或 HH:MM:SS,mmm）为秒数
+   */
+  function parseTTMLTime(raw) {
+    if (!raw) return 0;
+    var s = raw.trim().replace(",", ".");
+    var parts = s.split(":");
+    if (parts.length === 3) {
+      return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+    }
+    if (parts.length === 2) {
+      return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+    }
+    return parseFloat(s) || 0;
+  }
+
+  /**
+   * 解析 TTML/NFLX-TT XML 字符串为标准 cue 数组
+   * @param {string} xmlText - TTML 文件内容
+   * @returns {{startTime:number, endTime:number, text:string}[]}
+   */
+  function parseTTML(xmlText) {
+    var cues = [];
+    if (!xmlText || typeof xmlText !== "string") return cues;
+    try {
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(xmlText, "text/xml");
+      if (doc.querySelector("parsererror")) return cues;
+
+      var pNodes = doc.querySelectorAll("p");
+      var seen = new Set();
+
+      for (var i = 0; i < pNodes.length; i++) {
+        var p = pNodes[i];
+        var begin = p.getAttribute("begin");
+        var end = p.getAttribute("end");
+        if (!begin || !end) continue;
+
+        var startTime = parseTTMLTime(begin);
+        var endTime = parseTTMLTime(end);
+        if (endTime <= startTime || startTime < 0) continue;
+
+        // 移除 ruby 注音标签，避免假名读音混入正文
+        var clone = p.cloneNode(true);
+        var rubyEls = clone.querySelectorAll("rt, rp");
+        for (var j = 0; j < rubyEls.length; j++) {
+          if (rubyEls[j].parentNode) rubyEls[j].parentNode.removeChild(rubyEls[j]);
+        }
+
+        var text = (clone.textContent || "").replace(/\s+/g, " ").trim();
+        if (!text) continue;
+
+        var key = startTime.toFixed(3) + "|" + text;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        cues.push({ startTime: startTime, endTime: endTime, text: text });
+      }
+
+      cues.sort(function (a, b) {
+        return a.startTime - b.startTime;
+      });
+    } catch (e) {
+      void e;
+    }
+    return cues;
+  }
+
   /* ========== 公开接口 ========== */
 
   window.SubBridgeParser = {
     parseSRT: parseSRT,
     parseVTT: parseVTT,
+    parseTTML: parseTTML,
     parseSubtitleFile: parseSubtitleFile,
     extractAllCuesFromVideo: extractAllCuesFromVideo,
   };

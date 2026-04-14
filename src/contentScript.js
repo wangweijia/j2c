@@ -585,6 +585,39 @@
     // 自动提取已移除：不应在用户未主动点击时弹出确认框
   }
 
+  /**
+   * 处理来自 subtitleInterceptor（MAIN world）的字幕 cues
+   * 通过 window.postMessage 桥接，因为 MAIN world 无法直接调用 isolated world 函数
+   */
+  function handleInterceptedCues(cues) {
+    if (!Array.isArray(cues) || cues.length === 0) return;
+    if (!state.settings.enabled) return;
+    if (!window.SubBridgeSyncEngine) return;
+
+    // 已在运行中则忽略（用户手动操作优先）
+    if (window.SubBridgeSyncEngine.isActive() || window.SubBridgeSyncEngine.isTranslating()) {
+      return;
+    }
+
+    renderStatus("自动拦截到 " + cues.length + " 条字幕，开始预翻译...");
+    var ok = window.SubBridgeSyncEngine.startFromCues(cues, state.settings.mode);
+    if (!ok) {
+      renderStatus("SubBridge");
+    }
+  }
+
+  /** 监听来自 MAIN world subtitleInterceptor 的 postMessage */
+  function registerInterceptorListener() {
+    window.addEventListener("message", function (event) {
+      // 只处理同窗口来源，防止跨页面注入
+      if (event.source !== window) return;
+      if (!event.data || event.data.source !== "subbridge-interceptor") return;
+      if (event.data.type === "SUBBRIDGE_CUES") {
+        handleInterceptedCues(event.data.cues);
+      }
+    });
+  }
+
   async function init() {
     await loadSettings();
     createOverlay();
@@ -594,6 +627,7 @@
     startPrefetchLoop();
     handleSubtitleMutation();
     initSyncEngine();
+    registerInterceptorListener();
 
     chrome.storage.onChanged.addListener(onStorageChanged);
     chrome.runtime.onMessage.addListener(onRuntimeMessage);

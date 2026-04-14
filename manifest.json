@@ -27,6 +27,16 @@
         "https://www.netflix.com/watch/*"
       ],
       "js": [
+        "src/subtitleInterceptor.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.netflix.com/watch/*"
+      ],
+      "js": [
         "src/translator/translator.js",
         "src/subtitleParser.js",
         "src/syncEngine.js",

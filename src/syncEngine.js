@@ -253,6 +253,28 @@
   }
 
   /**
+   * 直接使用网络拦截到的 cues 启动预翻译
+   * 跳过 Step1 提取和确认对话框，直接进入批量翻译 + 时间轴同步
+   * @param {{startTime:number, endTime:number, text:string}[]} cues
+   * @param {string} mode - 翻译模式
+   */
+  function startFromCues(cues, mode) {
+    if (engine.active || engine.translating) {
+      return false; // 已在运行中，不重复启动
+    }
+    if (!cues || !cues.length) {
+      return false;
+    }
+
+    engine.cues = cues.map(function (c) {
+      return { startTime: c.startTime, endTime: c.endTime, text: c.text, translated: "" };
+    });
+
+    startBatchAndSync(mode);
+    return true;
+  }
+
+  /**
    * 从文件导入后启动流程
    */
   function startFromFile(content, filename, mode) {
@@ -389,11 +411,14 @@
       engine.onPrompt = callbacks.onPrompt || null;
     },
 
-    // 自动流程
+    // 自动流程（从 textTracks 提取）
     tryAutoFlow: tryAutoFlow,
 
     // 手动文件导入流程
     startFromFile: startFromFile,
+
+    // 网络拦截 cues 直接启动（最优先）
+    startFromCues: startFromCues,
 
     // 控制
     deactivate: deactivate,
