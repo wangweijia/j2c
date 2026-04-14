@@ -1,9 +1,9 @@
 /**
  * SubBridge 预翻译同步引擎
  *
- * 三步流程自动衔接：
- *   Step 1 — 提取字幕（自动从 textTracks 提取，或用户导入 SRT/VTT）
- *   Step 2 — 批量翻译全部字幕
+ * 流程：
+ *   Step 1 — 提取字幕（网络拦截 / textTracks / SRT 导入）
+ *   Step 2 — 滚动窗口翻译（只翻当前播放位置往后 N 分钟，按需追加）
  *   Step 3 — video.timeupdate 时间轴同步渲染
  *
  * 对外暴露 window.SubBridgeSyncEngine
@@ -15,23 +15,26 @@
   var engine = {
     /** @type {{startTime:number, endTime:number, text:string, translated:string}[]} */
     cues: [],
-    active: false, // 是否启用预翻译模式
-    translating: false, // 是否正在批量翻译中
-    translateDone: false, // 翻译是否全部完成
+    active: false,        // 是否启用预翻译模式
+    translating: false,   // 是否正在翻译某个窗口
+    translateDone: false, // 所有 cue 是否已翻译完
     progress: { done: 0, total: 0, failed: 0 },
     videoEl: null,
     timeupdateBound: null,
     lastRenderedIdx: -1,
     abortFlag: false,
-    /** @type {function|null} 外部注入的 renderSubtitle(original, translated) */
+    /** 滚动窗口配置 */
+    windowSecs: 5 * 60,      // 每次翻译向前看多远（秒）
+    triggerBuffer: 2 * 60,   // 剩余缓冲低于此值时触发下一窗口
+    translationHorizon: 0,   // 已安排翻译的时间上限（秒）
+    windowBusy: false,       // 当前是否有窗口在翻译中
+    windowMode: "online-free",
+    _windowInterval: null,   // 滚动窗口监控定时器
+    /** @type {function|null} */
     onRender: null,
-    /** @type {function|null} 外部注入的 renderStatus(text) */
     onStatus: null,
-    /** @type {function|null} 外部注入的 clearOverlay() */
     onClear: null,
-    /** @type {function|null} 外部注入的 onModeChange(active) */
     onModeChange: null,
-    /** @type {function|null} 外部注入的 showPrompt(msg, onConfirm, onCancel) */
     onPrompt: null,
   };
 
@@ -65,71 +68,126 @@
     return { success: true, count: cues.length, cues: cues };
   }
 
-  /* ========== Step 2: 批量翻译 ========== */
+  /* ========== Step 2: 滚动窗口翻译 ========== */
 
   /**
-   * 批量翻译所有 cue，翻译结果写入 cue.translated
-   * @param {string} mode - 翻译模式 (online-free / local-free)
-   * @param {function} onProgress - 回调 (done, total, failed)
+   * 翻译一个时间窗口内尚未翻译的 cues
+   * @param {number} fromTime  - 窗口起始时间（秒）
+   * @param {number} toTime    - 窗口结束时间（秒）
    */
-  async function batchTranslateAll(mode, onProgress) {
-    if (!engine.cues.length) return;
-    engine.translating = true;
-    engine.translateDone = false;
-    engine.abortFlag = false;
-    engine.progress = { done: 0, total: engine.cues.length, failed: 0 };
+  async function translateWindow(fromTime, toTime) {
+    if (engine.windowBusy || engine.abortFlag) return;
 
     var translator = window.SubBridgeTranslator;
-    if (!translator) {
-      engine.translating = false;
-      return;
+    if (!translator) return;
+
+    // 收集窗口内未翻译的 cue
+    var toTranslate = [];
+    for (var i = 0; i < engine.cues.length; i++) {
+      var c = engine.cues[i];
+      if (c.startTime < fromTime - 0.5) continue;
+      if (c.startTime > toTime) break;
+      if (!c.translated) toTranslate.push(i);
     }
 
-    for (var i = 0; i < engine.cues.length; i++) {
+    if (!toTranslate.length) return;
+
+    engine.windowBusy = true;
+    engine.translating = true;
+    var total = toTranslate.length;
+    var done = 0;
+    var failed = 0;
+
+    for (var k = 0; k < toTranslate.length; k++) {
       if (engine.abortFlag) break;
 
-      var cue = engine.cues[i];
-      // 已有翻译则跳过
-      if (cue.translated) {
-        engine.progress.done++;
-        if (onProgress) onProgress(engine.progress.done, engine.progress.total, engine.progress.failed);
-        continue;
-      }
+      var cue = engine.cues[toTranslate[k]];
+      if (cue.translated) { done++; continue; }
 
       var text = translator.normalizeText(cue.text);
       if (!text) {
         cue.translated = cue.text;
-        engine.progress.done++;
-        if (onProgress) onProgress(engine.progress.done, engine.progress.total, engine.progress.failed);
+        done++;
         continue;
       }
 
       var lang = translator.detectLanguage(text);
       try {
-        var result = await translator.translate(text, mode || "online-free", lang);
+        var result = await translator.translate(text, engine.windowMode, lang);
         cue.translated = result.translatedText || text;
       } catch (e) {
         cue.translated = text;
-        engine.progress.failed++;
+        failed++;
       }
 
+      done++;
       engine.progress.done++;
-      if (onProgress) onProgress(engine.progress.done, engine.progress.total, engine.progress.failed);
+      engine.progress.failed += failed > 0 ? 1 : 0;
 
-      // 每翻译 1 条暂停一小段，避免 API 限速
-      if (!engine.abortFlag && i < engine.cues.length - 1) {
+      if (engine.onStatus) {
+        var pct = total > 0 ? Math.round((done / total) * 100) : 100;
+        var msg = "预翻译窗口 " + done + "/" + total + " (" + pct + "%)";
+        if (failed) msg += " 失败:" + failed;
+        engine.onStatus(msg);
+      }
+
+      // 限速：每条间隔 80ms，避免 API 被封
+      if (!engine.abortFlag && k < toTranslate.length - 1) {
         await sleep(80);
       }
     }
 
+    engine.windowBusy = false;
     engine.translating = false;
-    engine.translateDone = !engine.abortFlag;
+
+    if (!engine.abortFlag && engine.onStatus) {
+      var horizonMin = Math.floor(engine.translationHorizon / 60);
+      engine.onStatus("已缓存至 " + horizonMin + " 分" + Math.floor(engine.translationHorizon % 60) + " 秒");
+    }
+  }
+
+  /**
+   * 按需检查是否需要翻译下一个窗口
+   * 判断条件：距离当前播放位置的翻译缓冲 < triggerBuffer
+   */
+  function checkAndAdvanceWindow() {
+    if (engine.windowBusy || engine.abortFlag || !engine.active) return;
+
+    var video = engine.videoEl || document.querySelector("video");
+    var currentTime = (video && video.currentTime) || 0;
+
+    // 判断是否需要翻译更多
+    if (engine.translationHorizon - currentTime >= engine.triggerBuffer) return;
+
+    // 如果用户 seek 到 horizon 之后，从当前位置重新开始
+    var fromTime = Math.max(engine.translationHorizon, currentTime);
+    var toTime = fromTime + engine.windowSecs;
+    engine.translationHorizon = toTime; // 先更新 horizon，防止并发触发
+
+    void translateWindow(fromTime, toTime);
+  }
+
+  /** 启动滚动窗口监控定时器 */
+  function startWindowMonitor(mode) {
+    engine.windowMode = mode || "online-free";
+    if (engine._windowInterval) clearInterval(engine._windowInterval);
+    // 每 3 秒检查一次是否需要翻译下一窗口
+    engine._windowInterval = setInterval(checkAndAdvanceWindow, 3000);
+    // 立即触发第一次翻译
+    checkAndAdvanceWindow();
+  }
+
+  /** 停止滚动窗口监控 */
+  function stopWindowMonitor() {
+    if (engine._windowInterval) {
+      clearInterval(engine._windowInterval);
+      engine._windowInterval = null;
+    }
+    engine.windowBusy = false;
   }
 
   function sleep(ms) {
-    return new Promise(function (resolve) {
-      setTimeout(resolve, ms);
-    });
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
   }
 
   /* ========== Step 3: 时间轴同步渲染 ========== */
@@ -183,6 +241,9 @@
   }
 
   function startTimeSync() {
+    // 已经启动则跳过，避免重复添加事件监听器
+    if (engine.videoEl) return true;
+
     var video = document.querySelector("video");
     if (!video) return false;
 
@@ -292,36 +353,36 @@
   }
 
   /**
-   * 批量翻译 + 翻译完成后自动启动时间同步
+   * 启动滚动窗口翻译 + 时间轴同步
+   *
+   * 策略：
+   * 1. 立即激活 timeupdate 同步（未翻译的 cue 显示原文，翻译完成后自动切换）
+   * 2. 从当前播放位置开始，只翻接下来 windowSecs 的内容
+   * 3. 每 3 秒检查一次，缓冲低于 triggerBuffer 时翻译下一窗口
    */
   async function startBatchAndSync(mode) {
-    engine.active = false; // 翻译期间还不切换模式
-    if (engine.onStatus) engine.onStatus("准备预翻译...");
-    if (engine.onModeChange) engine.onModeChange(false);
+    if (engine.onStatus) engine.onStatus("准备滚动预翻译...");
 
-    await batchTranslateAll(mode, function (done, total, failed) {
-      if (engine.onStatus) {
-        var pct = Math.round((done / total) * 100);
-        var msg = "预翻译 " + done + "/" + total + " (" + pct + "%)";
-        if (failed) msg += " 失败:" + failed;
-        engine.onStatus(msg);
-      }
-    });
+    engine.windowMode = mode || "online-free";
+    engine.progress = { done: 0, total: engine.cues.length, failed: 0 };
 
-    if (engine.abortFlag) {
-      if (engine.onStatus) engine.onStatus("预翻译已取消");
-      engine.cues = [];
+    // 立即启动时间轴同步（用户立即看到原文兜底）
+    var syncStarted = startTimeSync();
+    engine.active = syncStarted;
+    if (engine.onModeChange) engine.onModeChange(syncStarted);
+
+    if (!engine.active) {
+      if (engine.onStatus) engine.onStatus("未找到视频元素，无法启动");
       return;
     }
 
-    // 翻译完成，自动切换到同步模式
-    engine.active = true;
-    if (engine.onModeChange) engine.onModeChange(true);
-    if (engine.onStatus) {
-      engine.onStatus("预翻译完成 ✓ 共" + engine.cues.length + "条");
-    }
+    // 从当前播放位置开始设置 horizon
+    var video = engine.videoEl || document.querySelector("video");
+    var currentTime = (video && video.currentTime) || 0;
+    engine.translationHorizon = currentTime;
 
-    startTimeSync();
+    // 启动滚动窗口监控（立即翻译第一个窗口）
+    startWindowMonitor(mode);
   }
 
   function promptUser(msg, onConfirm, onCancel) {
@@ -343,6 +404,9 @@
     engine.abortFlag = true;
     engine.active = false;
     engine.translateDone = false;
+    engine.translating = false;
+    engine.translationHorizon = 0;
+    stopWindowMonitor();
     stopTimeSync();
     engine.cues = [];
     engine.progress = { done: 0, total: 0, failed: 0 };
