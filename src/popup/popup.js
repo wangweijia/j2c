@@ -93,11 +93,17 @@ function showProgress(done, total, failed) {
 
 // 自动提取
 btnAutoExtract.addEventListener("click", async function () {
-  showStatus("正在通知页面提取字幕...");
+  showStatus("正在从Netflix提取字幕...");
+  btnAutoExtract.disabled = true;
   var resp = await sendToContentScript({ type: "PRETRANSLATE_AUTO" });
+  btnAutoExtract.disabled = false;
   if (resp && resp.ok) {
-    showStatus("已发送提取请求，请在页面查看提示");
+    showStatus("检测到 " + resp.count + " 条字幕，请在页面确认");
     startPollingStatus();
+  } else if (resp && resp.reason === "no_cues") {
+    showStatus("未能自动提取字幕（Netflix DRM限制），请使用下方「导入字幕文件」");
+  } else if (resp && resp.reason === "already_active") {
+    showStatus("预翻译已在运行中");
   } else {
     showStatus("请先打开 Netflix 视频页面");
   }

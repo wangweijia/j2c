@@ -492,10 +492,11 @@
 
     if (message.type === "PRETRANSLATE_AUTO") {
       if (window.SubBridgeSyncEngine) {
-        window.SubBridgeSyncEngine.tryAutoFlow(state.settings.mode);
-        sendResponse({ ok: true });
+        window.SubBridgeSyncEngine.tryAutoFlow(state.settings.mode).then(function (result) {
+          sendResponse({ ok: result && result.success, reason: result && result.reason, count: result && result.count });
+        });
       } else {
-        sendResponse({ ok: false });
+        sendResponse({ ok: false, reason: "engine_not_loaded" });
       }
       return true;
     }

@@ -219,13 +219,18 @@
    * @param {string} mode - 翻译模式
    */
   async function tryAutoFlow(mode) {
-    if (engine.active || engine.translating) return;
+    if (engine.active || engine.translating) {
+      return { success: false, reason: "already_active" };
+    }
 
     // Step 1: 自动提取
     var extracted = autoExtractSubtitles();
-    if (!extracted.success || extracted.count < 5) {
-      // 字幕太少或提取失败，不触发自动流程
-      return;
+    if (!extracted.success || extracted.count < 1) {
+      // 提取失败，通知用户
+      if (engine.onStatus) {
+        engine.onStatus("未能自动提取字幕（Netflix DRM限制），请导入SRT/VTT文件");
+      }
+      return { success: false, reason: "no_cues", trackInfo: extracted };
     }
 
     // 提示用户
@@ -243,6 +248,8 @@
       },
       null,
     );
+
+    return { success: true, count: extracted.count };
   }
 
   /**
