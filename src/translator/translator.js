@@ -157,41 +157,28 @@
     return t;
   }
 
-  /* ========== 翻译源 2: Lingva (Google 翻译代理) ========== */
-  async function translateLingva(text, lang) {
+  /* ========== 翻译源 2: Google Translate 非官方端点 ========== */
+  async function translateGoogle(text, lang) {
     const source = lang === "ja" ? "ja" : "en";
-    const url = "https://lingva.ml/api/v1/" + source + "/zh/" + encodeURIComponent(text);
+    const url =
+      "https://translate.googleapis.com/translate_a/single?client=gtx&sl=" +
+      source +
+      "&tl=zh-CN&dt=t&q=" +
+      encodeURIComponent(text);
     const data = await fetchWithTimeout(url, 3000);
-    const t = data && data.translation;
-    if (!t || typeof t !== "string") throw new Error("lingva_empty");
+    // 返回格式: [[["翻译结果", "原文", ...], ...], ...]
+    if (!Array.isArray(data) || !Array.isArray(data[0])) throw new Error("google_empty");
+    const parts = data[0]
+      .filter((item) => Array.isArray(item) && typeof item[0] === "string")
+      .map((item) => item[0]);
+    const t = parts.join("");
+    if (!t) throw new Error("google_empty");
     return t;
-  }
-
-  /* ========== 翻译源 3: LibreTranslate 公共实例 ========== */
-  async function translateLibre(text, lang) {
-    const source = lang === "ja" ? "ja" : "en";
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
-    try {
-      const resp = await fetch("https://libretranslate.com/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ q: text, source, target: "zh", format: "text" }),
-        signal: controller.signal,
-      });
-      if (!resp.ok) throw new Error("libre_http_" + resp.status);
-      const data = await resp.json();
-      const t = data && data.translatedText;
-      if (!t || typeof t !== "string") throw new Error("libre_empty");
-      return t;
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   /* ========== 链式翻译策略 ========== */
   async function translateOnlineChain(text, lang) {
-    const strategies = [translateMyMemory, translateLingva, translateLibre];
+    const strategies = [translateMyMemory, translateGoogle];
     let lastError = null;
     for (const fn of strategies) {
       try {
@@ -206,7 +193,9 @@
   /* ========== 主入口 ========== */
   async function translate(text, mode, preferredLang) {
     const normalized = normalizeText(text);
-    if (!normalized) return "";
+    if (!normalized) {
+      return { lang: "unknown", translatedText: "", originalText: "", fromCache: false, provider: "none" };
+    }
 
     const lang = resolveLanguage(preferredLang || detectLanguage(normalized));
     const cacheKey = lang + "::" + normalized;

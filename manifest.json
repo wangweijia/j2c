@@ -11,8 +11,7 @@
   "host_permissions": [
     "https://www.netflix.com/*",
     "https://api.mymemory.translated.net/*",
-    "https://lingva.ml/*",
-    "https://libretranslate.com/*"
+    "https://translate.googleapis.com/*"
   ],
   "background": {
     "service_worker": "src/background.js"

@@ -11,6 +11,7 @@
     showStatusBadge: true,
     hideNativeSubtitles: true,
     enablePrefetch15s: true,
+    myMemoryEmail: "",
   };
 
   const state = {
@@ -191,7 +192,10 @@
   }
 
   function scheduleClearOverlay() {
-    if (state.hideTimer) return;
+    // 每次重新计时，避免字幕就续出现时清屏误辦
+    if (state.hideTimer) {
+      clearTimeout(state.hideTimer);
+    }
 
     state.hideTimer = setTimeout(() => {
       state.hideTimer = null;
@@ -541,21 +545,25 @@
 
     function cleanup() {
       state.promptEl.style.display = "none";
-      yesBtn.removeEventListener("click", onYes);
-      noBtn.removeEventListener("click", onNo);
     }
 
-    function onYes() {
-      cleanup();
-      if (onConfirm) onConfirm();
-    }
-    function onNo() {
-      cleanup();
-      if (onCancel) onCancel();
-    }
-
-    yesBtn.addEventListener("click", onYes);
-    noBtn.addEventListener("click", onNo);
+    // 使用 once:true 避免多次调用导致监听器叠加
+    yesBtn.addEventListener(
+      "click",
+      function () {
+        cleanup();
+        if (onConfirm) onConfirm();
+      },
+      { once: true },
+    );
+    noBtn.addEventListener(
+      "click",
+      function () {
+        cleanup();
+        if (onCancel) onCancel();
+      },
+      { once: true },
+    );
   }
 
   function initSyncEngine() {
@@ -572,13 +580,7 @@
       },
       onPrompt: showSyncPrompt,
     });
-
-    // 延迟 3 秒后尝试自动提取（等 Netflix 播放器加载字幕轨道）
-    setTimeout(function () {
-      if (state.settings.enabled) {
-        window.SubBridgeSyncEngine.tryAutoFlow(state.settings.mode);
-      }
-    }, 3000);
+    // 自动提取已移除：不应在用户未主动点击时弹出确认框
   }
 
   async function init() {
