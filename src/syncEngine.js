@@ -217,8 +217,36 @@
     return -1;
   }
 
+  function getActiveVideo() {
+    var vids = document.querySelectorAll("video");
+    if (!vids.length) return null;
+    if (vids.length === 1) return vids[0];
+    for (var i = 0; i < vids.length; i++) {
+      // 优先选择正在播放或已经加载完毕的 video
+      if (vids[i].readyState > 0 && !vids[i].paused) return vids[i];
+    }
+    for (var j = 0; j < vids.length; j++) {
+      if (vids[j].readyState > 0) return vids[j];
+    }
+    return vids[0];
+  }
+
   function onTimeUpdate() {
-    if (!engine.active || !engine.videoEl) return;
+    if (!engine.active) return;
+
+    var activeVid = getActiveVideo();
+    if (!activeVid) return;
+
+    // 如果 video 被重建或切换，重新绑定
+    if (engine.videoEl !== activeVid) {
+      if (engine.videoEl && engine.timeupdateBound) {
+        engine.videoEl.removeEventListener("timeupdate", engine.timeupdateBound);
+      }
+      engine.videoEl = activeVid;
+      if (engine.timeupdateBound) {
+        engine.videoEl.addEventListener("timeupdate", engine.timeupdateBound);
+      }
+    }
 
     var currentTime = engine.videoEl.currentTime || 0;
     var idx = findCueAtTime(currentTime);
@@ -228,6 +256,11 @@
 
     if (idx === -1) {
       if (engine.onClear) engine.onClear();
+      // 当找不到字幕时，不要直接 return，依然要更新状态，否则可能停留在最后一句
+      if (engine.onStatus) {
+        var statusMsg = engine.translating ? "翻译中..." : "预翻译就绪";
+        engine.onStatus(statusMsg);
+      }
       return;
     }
 
@@ -244,7 +277,7 @@
     // 已经启动则跳过，避免重复添加事件监听器
     if (engine.videoEl) return true;
 
-    var video = document.querySelector("video");
+    var video = getActiveVideo();
     if (!video) return false;
 
     engine.videoEl = video;
