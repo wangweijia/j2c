@@ -22,17 +22,10 @@
     originalEl: null,
     translatedEl: null,
     statusEl: null,
-    promptEl: null,
-    queueRunning: false,
-    pendingSegment: null,
-    mergeTimer: null,
     renderTimer: null,
     hideTimer: null,
     translationVersion: 0,
     hiddenSubtitleEls: new Set(),
-    prefetchTimer: null,
-    prefetchReportedOk: null,
-    syncEngineReady: false,
   };
 
   function hashText(text) {
@@ -79,26 +72,12 @@
     container.appendChild(translated);
     container.appendChild(status);
 
-    // 预翻译确认弹窗
-    const prompt = document.createElement("div");
-    prompt.id = "subbridge-prompt";
-    prompt.style.display = "none";
-    prompt.innerHTML =
-      '<div class="subbridge-prompt-box">' +
-      '<div class="subbridge-prompt-msg"></div>' +
-      '<div class="subbridge-prompt-btns">' +
-      '<button class="subbridge-prompt-yes">开始预翻译</button>' +
-      '<button class="subbridge-prompt-no">使用实时翻译</button>' +
-      "</div></div>";
-
     document.documentElement.appendChild(container);
-    document.documentElement.appendChild(prompt);
 
     state.overlayEl = container;
     state.originalEl = original;
     state.translatedEl = translated;
     state.statusEl = status;
-    state.promptEl = prompt;
   }
 
   function hideNativeSubtitleElements() {
@@ -211,29 +190,40 @@
   }
 
   function extractSubtitleText() {
+    let allText = "";
     for (const selector of subtitleSelectors) {
-      const root = document.querySelector(selector);
-      if (!root) continue;
+      const nodes = document.querySelectorAll(selector);
+      if (!nodes.length) continue;
 
-      // 只取叶子 span（不含子 span），避免 Netflix 嵌套 span 导致文字被重复收集
-      const allSpans = root.querySelectorAll("span");
       const lines = [];
-      allSpans.forEach((el) => {
-        if (el.querySelector("span")) return; // 跳过含子 span 的 wrapper
-        const value = window.SubBridgeTranslator.normalizeText(el.textContent || "");
-        if (value) {
-          lines.push(value);
+      nodes.forEach((root) => {
+        // 尝试提取叶子 span
+        const allSpans = root.querySelectorAll("span");
+        let hasLeafSpans = false;
+        allSpans.forEach((el) => {
+          if (el.querySelector("span")) return;
+          const value = window.SubBridgeTranslator.normalizeText(el.textContent || "");
+          if (value) {
+            lines.push(value);
+            hasLeafSpans = true;
+          }
+        });
+
+        // 如果没有提取到任何叶子 span，则直接读取 root.textContent
+        if (!hasLeafSpans) {
+          const text = root.textContent || "";
+          const value = window.SubBridgeTranslator.normalizeText(text);
+          if (value) lines.push(value);
         }
       });
 
-      const text = lines.length ? lines.join(" ") : root.textContent || "";
-      const normalized = window.SubBridgeTranslator.normalizeText(text);
-      if (normalized) {
-        return normalized;
+      if (lines.length) {
+        allText = lines.join(" ");
+        break; // 匹配到一个 selector 就结束，避免重复
       }
     }
 
-    return "";
+    return window.SubBridgeTranslator.normalizeText(allText);
   }
 
   function buildSubtitleSegment(text) {
@@ -311,12 +301,6 @@
   }
 
   function handleSubtitleMutation() {
-    // 预翻译同步模式下，字幕由 timeupdate 驱动，MutationObserver 仅负责隐藏原生字幕
-    if (window.SubBridgeSyncEngine && window.SubBridgeSyncEngine.isActive()) {
-      hideNativeSubtitleElements();
-      return;
-    }
-
     const current = extractSubtitleText();
 
     if (!current) {
@@ -343,109 +327,7 @@
     });
   }
 
-  function extractCueText(cue) {
-    if (!cue) return "";
 
-    const raw = typeof cue.text === "string" ? cue.text : "";
-    const withoutTags = raw.replace(/<[^>]+>/g, " ").replace(/\n/g, " ");
-    return window.SubBridgeTranslator.normalizeText(withoutTags);
-  }
-
-  function collectFutureCueTexts(secondsAhead) {
-    const video = document.querySelector("video");
-    if (!video || !video.textTracks) {
-      return { supported: false, texts: [] };
-    }
-
-    const now = video.currentTime || 0;
-    const end = now + secondsAhead;
-    const texts = [];
-
-    for (let trackIndex = 0; trackIndex < video.textTracks.length; trackIndex += 1) {
-      const track = video.textTracks[trackIndex];
-      try {
-        if (track.mode === "disabled") {
-          track.mode = "hidden";
-        }
-      } catch (error) {
-        void error;
-      }
-
-      const cues = track.cues;
-      if (!cues || !cues.length) {
-        continue;
-      }
-
-      for (let i = 0; i < cues.length; i += 1) {
-        const cue = cues[i];
-        if (typeof cue.startTime !== "number") {
-          continue;
-        }
-
-        if (cue.startTime < now || cue.startTime > end) {
-          continue;
-        }
-
-        const text = extractCueText(cue);
-        if (text) {
-          texts.push(text);
-        }
-      }
-    }
-
-    return { supported: true, texts };
-  }
-
-  function reportPrefetchBadge(ok, title) {
-    if (state.prefetchReportedOk === ok) {
-      return;
-    }
-
-    state.prefetchReportedOk = ok;
-    chrome.runtime.sendMessage({ type: "PREFETCH_BADGE", ok, title }, () => {
-      void chrome.runtime.lastError;
-    });
-  }
-
-  async function runPrefetch() {
-    if (!state.settings.enabled || !state.settings.enablePrefetch15s) {
-      reportPrefetchBadge(false, "15秒预获取已关闭");
-      return;
-    }
-
-    const result = collectFutureCueTexts(15);
-    if (!result.supported) {
-      reportPrefetchBadge(false, "未读取到字幕轨道");
-      return;
-    }
-
-    const uniqueTexts = [...new Set(result.texts)].slice(0, 8);
-    if (!uniqueTexts.length) {
-      reportPrefetchBadge(false, "当前未捕获未来15秒字幕");
-      return;
-    }
-
-    reportPrefetchBadge(true, "已预获取未来15秒字幕");
-
-    for (let i = 0; i < uniqueTexts.length; i += 1) {
-      const text = uniqueTexts[i];
-      const lang = window.SubBridgeTranslator.detectLanguage(text);
-      await window.SubBridgeTranslator.translate(text, state.settings.mode, lang);
-    }
-  }
-
-  function startPrefetchLoop() {
-    if (state.prefetchTimer) {
-      clearInterval(state.prefetchTimer);
-      state.prefetchTimer = null;
-    }
-
-    state.prefetchTimer = setInterval(() => {
-      void runPrefetch();
-    }, 2500);
-
-    void runPrefetch();
-  }
 
   async function loadSettings() {
     const keys = Object.keys(DEFAULT_SETTINGS);
@@ -471,7 +353,6 @@
     if (changed) {
       applyOverlayStyles();
       hideNativeSubtitleElements();
-      void runPrefetch();
     }
   }
 
@@ -484,148 +365,6 @@
       applyOverlayStyles();
       renderStatus(state.settings.enabled ? "已启用" : "已暂停");
     }
-
-    if (message.type === "PRETRANSLATE_FILE") {
-      // 从 popup 发来的文件内容
-      if (window.SubBridgeSyncEngine) {
-        var ok = window.SubBridgeSyncEngine.startFromFile(message.content, message.filename, state.settings.mode);
-        sendResponse({ ok: ok });
-      } else {
-        sendResponse({ ok: false, error: "engine_not_ready" });
-      }
-      return true;
-    }
-
-    if (message.type === "PRETRANSLATE_AUTO") {
-      if (window.SubBridgeSyncEngine) {
-        window.SubBridgeSyncEngine.tryAutoFlow(state.settings.mode).then(function (result) {
-          sendResponse({ ok: result && result.success, reason: result && result.reason, count: result && result.count });
-        });
-      } else {
-        sendResponse({ ok: false, reason: "engine_not_loaded" });
-      }
-      return true;
-    }
-
-    if (message.type === "PRETRANSLATE_STOP") {
-      if (window.SubBridgeSyncEngine) {
-        window.SubBridgeSyncEngine.deactivate();
-        sendResponse({ ok: true });
-      } else {
-        sendResponse({ ok: false });
-      }
-      return true;
-    }
-
-    if (message.type === "PRETRANSLATE_STATUS") {
-      var eng = window.SubBridgeSyncEngine;
-      sendResponse({
-        active: eng ? eng.isActive() : false,
-        translating: eng ? eng.isTranslating() : false,
-        progress: eng ? eng.getProgress() : { done: 0, total: 0, failed: 0 },
-        cueCount: eng ? eng.getCueCount() : 0,
-      });
-      return true;
-    }
-
-    if (message.type === "PRETRANSLATE_EXPORT") {
-      var srt = window.SubBridgeSyncEngine ? window.SubBridgeSyncEngine.exportTranslatedSRT() : "";
-      sendResponse({ srt: srt });
-      return true;
-    }
-  }
-
-  function showSyncPrompt(msg, onConfirm, onCancel) {
-    if (!state.promptEl) return;
-
-    var msgEl = state.promptEl.querySelector(".subbridge-prompt-msg");
-    var yesBtn = state.promptEl.querySelector(".subbridge-prompt-yes");
-    var noBtn = state.promptEl.querySelector(".subbridge-prompt-no");
-
-    msgEl.textContent = msg;
-    state.promptEl.style.display = "flex";
-
-    function cleanup() {
-      state.promptEl.style.display = "none";
-    }
-
-    // 使用 once:true 避免多次调用导致监听器叠加
-    yesBtn.addEventListener(
-      "click",
-      function () {
-        cleanup();
-        if (onConfirm) onConfirm();
-      },
-      { once: true },
-    );
-    noBtn.addEventListener(
-      "click",
-      function () {
-        cleanup();
-        if (onCancel) onCancel();
-      },
-      { once: true },
-    );
-  }
-
-  function initSyncEngine() {
-    if (!window.SubBridgeSyncEngine) return;
-
-    window.SubBridgeSyncEngine.setCallbacks({
-      onRender: renderSubtitle,
-      onStatus: renderStatus,
-      onClear: clearOverlay,
-      onModeChange: function (active) {
-        state.syncEngineReady = active;
-        // 预翻译模式激活时隐藏原生字幕
-        if (active) hideNativeSubtitleElements();
-      },
-      onPrompt: showSyncPrompt,
-    });
-    // 自动提取已移除：不应在用户未主动点击时弹出确认框
-  }
-
-  /**
-   * 处理来自 subtitleInterceptor（MAIN world）的字幕 cues
-   * 通过 window.postMessage 桥接，因为 MAIN world 无法直接调用 isolated world 函数
-   */
-  function handleInterceptedCues(cues) {
-    if (!Array.isArray(cues) || cues.length === 0) return;
-    if (!state.settings.enabled) return;
-    if (!window.SubBridgeSyncEngine) return;
-
-    // 已在运行中则忽略（用户手动操作优先）
-    if (window.SubBridgeSyncEngine.isActive() || window.SubBridgeSyncEngine.isTranslating()) {
-      return;
-    }
-
-    renderStatus("自动拦截到 " + cues.length + " 条字幕");
-    showSyncPrompt(
-      "已拦截到 " + cues.length + " 条完整字幕。\n是否启用「全量预翻译」以获得零延迟体验？\n（若遇到字幕不同步或翻译失败，请选择“使用实时翻译”）",
-      function () {
-        var ok = window.SubBridgeSyncEngine.startFromCues(cues, state.settings.mode);
-        if (!ok) {
-          renderStatus("启动预翻译失败，请重试");
-        } else {
-          renderStatus("开始预翻译...");
-        }
-      },
-      function () {
-        renderStatus("已使用实时翻译模式");
-      }
-    );
-  }
-
-  /** 监听来自 MAIN world subtitleInterceptor 的 postMessage */
-  function registerInterceptorListener() {
-    window.addEventListener("message", function (event) {
-      // 只处理同窗口来源，防止跨页面注入
-      if (event.source !== window) return;
-      if (!event.data || event.data.source !== "subbridge-interceptor") return;
-      if (event.data.type === "SUBBRIDGE_CUES") {
-        handleInterceptedCues(event.data.cues);
-      }
-    });
   }
 
   async function init() {
@@ -634,10 +373,7 @@
     applyOverlayStyles();
     hideNativeSubtitleElements();
     startObserver();
-    startPrefetchLoop();
     handleSubtitleMutation();
-    initSyncEngine();
-    registerInterceptorListener();
 
     chrome.storage.onChanged.addListener(onStorageChanged);
     chrome.runtime.onMessage.addListener(onRuntimeMessage);
