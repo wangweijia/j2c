@@ -340,8 +340,21 @@
     return window.SubBridgeTranslator.normalizeText(withoutTags);
   }
 
+  function getActiveVideo() {
+    var vids = document.querySelectorAll("video");
+    if (!vids.length) return null;
+    if (vids.length === 1) return vids[0];
+    for (var i = 0; i < vids.length; i++) {
+      if (vids[i].readyState > 0 && !vids[i].paused) return vids[i];
+    }
+    for (var j = 0; j < vids.length; j++) {
+      if (vids[j].readyState > 0) return vids[j];
+    }
+    return vids[0];
+  }
+
   function collectFutureCueTexts(secondsAhead) {
-    const video = document.querySelector("video");
+    const video = getActiveVideo();
     if (!video || !video.textTracks) {
       return { supported: false, texts: [] };
     }
@@ -352,6 +365,14 @@
 
     for (let trackIndex = 0; trackIndex < video.textTracks.length; trackIndex += 1) {
       const track = video.textTracks[trackIndex];
+      try {
+        if (track.mode === "disabled") {
+          track.mode = "hidden";
+        }
+      } catch (error) {
+        void error;
+      }
+
       const cues = track.cues;
       if (!cues || !cues.length) continue;
 
@@ -388,8 +409,8 @@
           } catch (e) {
             void e;
           }
-          // 等待 300ms 避免触发翻译 API 限流
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          // 等待 1000ms 避免触发翻译 API 限流 (Google/MyMemory对并发很敏感)
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
     } finally {
@@ -400,8 +421,8 @@
   function enqueuePrefetchCues() {
     if (!state.settings.enabled || !state.settings.enablePrefetch5Min) return;
 
-    // 提前抓取 5 分钟 (300秒) 的字幕
-    const result = collectFutureCueTexts(300);
+    // 提前抓取 2 分钟 (120秒) 的字幕，防止一次性抓取太多导致 API 被封
+    const result = collectFutureCueTexts(120);
     if (!result.supported || !result.texts.length) return;
 
     let addedCount = 0;

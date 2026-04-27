@@ -140,6 +140,8 @@
     const data = await fetchWithTimeout(url, 2500);
     const t = data && data.responseData && data.responseData.translatedText;
     if (!t || typeof t !== "string") throw new Error("mymemory_empty");
+    if (t.includes("MYMEMORY WARNING")) throw new Error("mymemory_limit_warning");
+    if (t.trim() === text.trim() && text.length > 2) throw new Error("mymemory_echo");
     return t;
   }
 
@@ -159,6 +161,7 @@
       .map((item) => item[0]);
     const t = parts.join("");
     if (!t) throw new Error("google_empty");
+    if (t.trim() === text.trim() && text.length > 2) throw new Error("google_echo");
     return t;
   }
 
