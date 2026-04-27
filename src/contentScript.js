@@ -599,11 +599,21 @@
       return;
     }
 
-    renderStatus("自动拦截到 " + cues.length + " 条字幕，开始预翻译...");
-    var ok = window.SubBridgeSyncEngine.startFromCues(cues, state.settings.mode);
-    if (!ok) {
-      renderStatus("SubBridge");
-    }
+    renderStatus("自动拦截到 " + cues.length + " 条字幕");
+    showSyncPrompt(
+      "已拦截到 " + cues.length + " 条完整字幕。\n是否启用「全量预翻译」以获得零延迟体验？\n（若遇到字幕不同步或翻译失败，请选择“使用实时翻译”）",
+      function () {
+        var ok = window.SubBridgeSyncEngine.startFromCues(cues, state.settings.mode);
+        if (!ok) {
+          renderStatus("启动预翻译失败，请重试");
+        } else {
+          renderStatus("开始预翻译...");
+        }
+      },
+      function () {
+        renderStatus("已使用实时翻译模式");
+      }
+    );
   }
 
   /** 监听来自 MAIN world subtitleInterceptor 的 postMessage */

@@ -9,7 +9,13 @@
       const data = await chrome.storage.local.get("subtitleCache");
       const entries = data && data.subtitleCache;
       if (Array.isArray(entries)) {
-        entries.forEach(([k, v]) => cache.set(k, v));
+        entries.forEach(([k, v]) => {
+          // 清理之前可能因为限流而被错误写入的回退缓存
+          if (typeof v === "string" && v.indexOf("[本地") !== -1) {
+            return;
+          }
+          cache.set(k, v);
+        });
       }
     } catch (e) {
       void e;
@@ -53,30 +59,10 @@
   /* ========== 本地词典 ========== */
   const localDictionary = {
     en: {
-      "thank you": "谢谢",
-      "i love you": "我爱你",
-      "what happened": "发生了什么",
-      "hurry up": "快点",
-      "be careful": "小心",
-      "no way": "不可能",
-      "wait a second": "等一下",
-      "let's go": "我们走吧",
-      "i don't know": "我不知道",
-      "are you okay": "你还好吗",
-      "see you": "回头见",
+
     },
     ja: {
-      ありがとう: "谢谢",
-      ごめん: "对不起",
-      大丈夫: "没事",
-      おはよう: "早上好",
-      こんばんは: "晚上好",
-      お願いします: "拜托了",
-      ちょっと待って: "等一下",
-      どうしたの: "怎么了",
-      いってきます: "我出门了",
-      ただいま: "我回来了",
-      信じられない: "难以置信",
+
     },
   };
 
@@ -177,7 +163,13 @@
   }
 
   /* ========== 链式翻译策略 ========== */
+  let apiBlockedUntil = 0;
+
   async function translateOnlineChain(text, lang) {
+    if (Date.now() < apiBlockedUntil) {
+      throw new Error("api_rate_limited");
+    }
+
     const strategies = [translateMyMemory, translateGoogle];
     let lastError = null;
     for (const fn of strategies) {
@@ -187,6 +179,9 @@
         lastError = e;
       }
     }
+
+    // 如果所有策略都失败（通常是因为触发了限流），则设置一个60秒的冷却期
+    apiBlockedUntil = Date.now() + 60000;
     throw lastError || new Error("all_sources_failed");
   }
 
@@ -217,15 +212,15 @@
       try {
         translatedText = await translateOnlineChain(normalized, lang);
         provider = "online-free";
+        setCache(cacheKey, translatedText);
       } catch (error) {
         translatedText = getLocalTranslation(normalized, lang);
         provider = "local-fallback";
+        // 避免在触发限流时，将失败的回退结果写入缓存，导致后续无法重试
       }
     } else {
       translatedText = getLocalTranslation(normalized, lang);
     }
-
-    setCache(cacheKey, translatedText);
 
     return {
       lang,

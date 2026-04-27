@@ -131,9 +131,9 @@
         engine.onStatus(msg);
       }
 
-      // 限速：每条间隔 80ms，避免 API 被封
+      // 限速：每条间隔 300ms，避免 API 被封
       if (!engine.abortFlag && k < toTranslate.length - 1) {
-        await sleep(80);
+        await sleep(300);
       }
     }
 
