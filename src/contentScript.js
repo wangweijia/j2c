@@ -361,7 +361,7 @@
 
     const now = video.currentTime || 0;
     const end = now + secondsAhead;
-    const texts = [];
+    const cueObjs = [];
 
     for (let trackIndex = 0; trackIndex < video.textTracks.length; trackIndex += 1) {
       const track = video.textTracks[trackIndex];
@@ -382,11 +382,22 @@
         if (cue.startTime < now || cue.startTime > end) continue;
 
         const text = extractCueText(cue);
-        if (text) texts.push(text);
+        if (text) cueObjs.push({ text, time: cue.startTime });
       }
     }
 
-    return { supported: true, texts: [...new Set(texts)] };
+    cueObjs.sort((a, b) => a.time - b.time);
+
+    const uniqueTexts = [];
+    const seen = new Set();
+    for (const obj of cueObjs) {
+      if (!seen.has(obj.text)) {
+        seen.add(obj.text);
+        uniqueTexts.push(obj.text);
+      }
+    }
+
+    return { supported: true, texts: uniqueTexts };
   }
 
   async function processPrefetchQueue() {
@@ -409,8 +420,8 @@
           } catch (e) {
             void e;
           }
-          // 等待 1000ms 避免触发翻译 API 限流 (Google/MyMemory对并发很敏感)
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          // 等待 800ms 避免触发翻译 API 限流
+          await new Promise((resolve) => setTimeout(resolve, 800));
         }
       }
     } finally {
@@ -421,21 +432,22 @@
   function enqueuePrefetchCues() {
     if (!state.settings.enabled || !state.settings.enablePrefetch5Min) return;
 
-    // 提前抓取 2 分钟 (120秒) 的字幕，防止一次性抓取太多导致 API 被封
+    // 提前抓取 2 分钟 (120秒) 的字幕
     const result = collectFutureCueTexts(120);
     if (!result.supported || !result.texts.length) return;
 
-    let addedCount = 0;
+    // 每次都重建队列，保证优先级最高（最接近当前播放时间）的字幕始终在队列最前面，支持无缝 Seek
+    const newQueue = [];
     for (const text of result.texts) {
       const lang = window.SubBridgeTranslator.detectLanguage(text);
-      // 仅当没被缓存，且不在队列中时，才加入队列
-      if (!window.SubBridgeTranslator.isCached(text, lang) && !state.prefetchQueue.includes(text)) {
-        state.prefetchQueue.push(text);
-        addedCount++;
+      if (!window.SubBridgeTranslator.isCached(text, lang)) {
+        newQueue.push(text);
       }
     }
 
-    if (addedCount > 0) {
+    state.prefetchQueue = newQueue;
+
+    if (state.prefetchQueue.length > 0) {
       void processPrefetchQueue();
     }
   }
