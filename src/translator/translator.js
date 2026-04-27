@@ -231,9 +231,20 @@
     };
   }
 
+  function isCached(text, preferredLang) {
+    const normalized = normalizeText(text);
+    if (!normalized) return true; // Treat empty as cached to avoid fetching
+
+    const lang = resolveLanguage(preferredLang || detectLanguage(normalized));
+    const cacheKey = lang + "::" + normalized;
+
+    return cache.has(cacheKey);
+  }
+
   window.SubBridgeTranslator = {
     detectLanguage,
     normalizeText,
     translate,
+    isCached,
   };
 })();

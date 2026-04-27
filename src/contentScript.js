@@ -10,7 +10,7 @@
     mergeDebounceMs: 180,
     showStatusBadge: true,
     hideNativeSubtitles: true,
-    enablePrefetch15s: true,
+    enablePrefetch5Min: true,
     myMemoryEmail: "",
   };
 
@@ -22,10 +22,16 @@
     originalEl: null,
     translatedEl: null,
     statusEl: null,
+    queueRunning: false,
+    pendingSegment: null,
+    mergeTimer: null,
     renderTimer: null,
     hideTimer: null,
     translationVersion: 0,
     hiddenSubtitleEls: new Set(),
+    prefetchQueue: [],
+    isPrefetching: false,
+    prefetchLoopTimer: null,
   };
 
   function hashText(text) {
@@ -327,7 +333,100 @@
     });
   }
 
+  function extractCueText(cue) {
+    if (!cue) return "";
+    const raw = typeof cue.text === "string" ? cue.text : "";
+    const withoutTags = raw.replace(/<[^>]+>/g, " ").replace(/\n/g, " ");
+    return window.SubBridgeTranslator.normalizeText(withoutTags);
+  }
 
+  function collectFutureCueTexts(secondsAhead) {
+    const video = document.querySelector("video");
+    if (!video || !video.textTracks) {
+      return { supported: false, texts: [] };
+    }
+
+    const now = video.currentTime || 0;
+    const end = now + secondsAhead;
+    const texts = [];
+
+    for (let trackIndex = 0; trackIndex < video.textTracks.length; trackIndex += 1) {
+      const track = video.textTracks[trackIndex];
+      const cues = track.cues;
+      if (!cues || !cues.length) continue;
+
+      for (let i = 0; i < cues.length; i += 1) {
+        const cue = cues[i];
+        if (typeof cue.startTime !== "number") continue;
+        if (cue.startTime < now || cue.startTime > end) continue;
+
+        const text = extractCueText(cue);
+        if (text) texts.push(text);
+      }
+    }
+
+    return { supported: true, texts: [...new Set(texts)] };
+  }
+
+  async function processPrefetchQueue() {
+    if (state.isPrefetching) return;
+    state.isPrefetching = true;
+
+    try {
+      while (state.prefetchQueue.length > 0) {
+        if (!state.settings.enabled || !state.settings.enablePrefetch5Min) {
+          state.prefetchQueue = [];
+          break;
+        }
+
+        const text = state.prefetchQueue.shift();
+        const lang = window.SubBridgeTranslator.detectLanguage(text);
+
+        if (!window.SubBridgeTranslator.isCached(text, lang)) {
+          try {
+            await window.SubBridgeTranslator.translate(text, state.settings.mode, lang);
+          } catch (e) {
+            void e;
+          }
+          // 等待 300ms 避免触发翻译 API 限流
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+      }
+    } finally {
+      state.isPrefetching = false;
+    }
+  }
+
+  function enqueuePrefetchCues() {
+    if (!state.settings.enabled || !state.settings.enablePrefetch5Min) return;
+
+    // 提前抓取 5 分钟 (300秒) 的字幕
+    const result = collectFutureCueTexts(300);
+    if (!result.supported || !result.texts.length) return;
+
+    let addedCount = 0;
+    for (const text of result.texts) {
+      const lang = window.SubBridgeTranslator.detectLanguage(text);
+      // 仅当没被缓存，且不在队列中时，才加入队列
+      if (!window.SubBridgeTranslator.isCached(text, lang) && !state.prefetchQueue.includes(text)) {
+        state.prefetchQueue.push(text);
+        addedCount++;
+      }
+    }
+
+    if (addedCount > 0) {
+      void processPrefetchQueue();
+    }
+  }
+
+  function startPrefetchLoop() {
+    if (state.prefetchLoopTimer) {
+      clearInterval(state.prefetchLoopTimer);
+    }
+    // 每 5 秒钟扫描一次轨道
+    state.prefetchLoopTimer = setInterval(enqueuePrefetchCues, 5000);
+    enqueuePrefetchCues();
+  }
 
   async function loadSettings() {
     const keys = Object.keys(DEFAULT_SETTINGS);
@@ -353,6 +452,11 @@
     if (changed) {
       applyOverlayStyles();
       hideNativeSubtitleElements();
+      if (!state.settings.enablePrefetch5Min) {
+        state.prefetchQueue = [];
+      } else {
+        enqueuePrefetchCues();
+      }
     }
   }
 
@@ -373,6 +477,7 @@
     applyOverlayStyles();
     hideNativeSubtitleElements();
     startObserver();
+    startPrefetchLoop();
     handleSubtitleMutation();
 
     chrome.storage.onChanged.addListener(onStorageChanged);
